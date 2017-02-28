@@ -11,18 +11,23 @@
 
 'use strict';
 
-var ReactComponent = require('ReactComponent');
+var ReactBaseClasses = require('ReactBaseClasses');
 var ReactElement = require('ReactElement');
-var ReactPropTypeLocationNames = require('ReactPropTypeLocationNames');
 var ReactNoopUpdateQueue = require('ReactNoopUpdateQueue');
 
 var emptyObject = require('emptyObject');
 var invariant = require('invariant');
 var warning = require('warning');
 
-import type { ReactPropTypeLocations } from 'ReactPropTypeLocations';
+var ReactComponent = ReactBaseClasses.Component;
 
 var MIXINS_KEY = 'mixins';
+
+// Helper function to allow the creation of anonymous functions which do not
+// have .name set to the name of the variable being assigned to.
+function identity(fn) {
+  return fn;
+}
 
 /**
  * Policies that describe methods in `ReactClassInterface`.
@@ -163,7 +168,6 @@ var ReactClassInterface: {[key: string]: SpecPolicy} = {
    *   }
    *
    * @return {ReactComponent}
-   * @nosideeffects
    * @required
    */
   render: 'DEFINE_ONCE',
@@ -323,7 +327,7 @@ var RESERVED_SPEC_KEYS = {
       validateTypeDef(
         Constructor,
         childContextTypes,
-        'childContext'
+        'child context'
       );
     }
     Constructor.childContextTypes = Object.assign(
@@ -383,7 +387,7 @@ var RESERVED_SPEC_KEYS = {
 function validateTypeDef(
   Constructor,
   typeDef,
-  location: ReactPropTypeLocations,
+  location: string,
 ) {
   for (var propName in typeDef) {
     if (typeDef.hasOwnProperty(propName)) {
@@ -394,7 +398,7 @@ function validateTypeDef(
         '%s: %s type `%s` is invalid; it must be a function, usually from ' +
         'React.PropTypes.',
         Constructor.displayName || 'ReactClass',
-        ReactPropTypeLocationNames[location],
+        location,
         propName
       );
     }
@@ -671,7 +675,7 @@ function bindAutoBindMethod(component, method) {
         warning(
           false,
           'bind(): React component methods may only be bound to the ' +
-          'component instance. See %s',
+          'component instance.\n\nSee %s',
           componentName
         );
       } else if (!args.length) {
@@ -679,7 +683,7 @@ function bindAutoBindMethod(component, method) {
           false,
           'bind(): You are binding a component method to the component. ' +
           'React does this for you automatically in a high-performance ' +
-          'way, so you can safely remove this call. See %s',
+          'way, so you can safely remove this call.\n\nSee %s',
           componentName
         );
         return boundMethod;
@@ -722,10 +726,7 @@ var ReactClassMixin = {
    * type signature and the only use case for this, is to avoid that.
    */
   replaceState: function(newState, callback) {
-    this.updater.enqueueReplaceState(this, newState);
-    if (callback) {
-      this.updater.enqueueCallback(this, callback, 'replaceState');
-    }
+    this.updater.enqueueReplaceState(this, newState, callback, 'replaceState');
   },
 
   /**
@@ -755,14 +756,17 @@ var ReactClass = {
 
   /**
    * Creates a composite component class given a class specification.
-   * See https://facebook.github.io/react/docs/top-level-api.html#react.createclass
+   * See https://facebook.github.io/react/docs/react-api.html#createclass
    *
    * @param {object} spec Class specification (which must define `render`).
    * @return {function} Component constructor function.
    * @public
    */
   createClass: function(spec) {
-    var Constructor = function(props, context, updater) {
+    // To keep our warnings more understandable, we'll use a little hack here to
+    // ensure that Constructor.name !== 'Constructor'. This makes sure we don't
+    // unnecessarily identify a class without displayName as 'Constructor'.
+    var Constructor = identity(function(props, context, updater) {
       // This constructor gets overridden by mocks. The argument is used
       // by mocks to assert on what gets mounted.
 
@@ -806,7 +810,7 @@ var ReactClass = {
       );
 
       this.state = initialState;
-    };
+    });
     Constructor.prototype = new ReactClassComponent();
     Constructor.prototype.constructor = Constructor;
     Constructor.prototype.__reactAutoBindPairs = [];

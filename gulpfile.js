@@ -16,6 +16,7 @@ var del = require('del');
 var merge = require('merge-stream');
 
 var babelPluginModules = require('fbjs-scripts/babel-6/rewrite-modules');
+var stripProvidesModule = require('fbjs-scripts/gulp/strip-provides-module');
 var extractErrors = require('./scripts/error-codes/gulp-extract-errors');
 var devExpressionWithCodes = require('./scripts/error-codes/dev-expression-with-codes');
 
@@ -38,7 +39,6 @@ var paths = {
 
       'src/ReactVersion.js',
       'src/shared/**/*.js',
-      '!src/shared/vendor/**/*.js',
       '!src/**/__benchmarks__/**/*.js',
       '!src/**/__tests__/**/*.js',
       '!src/**/__mocks__/**/*.js',
@@ -56,7 +56,6 @@ var paths = {
 
       'src/ReactVersion.js',
       'src/shared/**/*.js',
-      '!src/shared/vendor/**/*.js',
       '!src/**/__benchmarks__/**/*.js',
       '!src/**/__tests__/**/*.js',
       '!src/**/__mocks__/**/*.js',
@@ -70,7 +69,6 @@ var paths = {
 
       'src/ReactVersion.js',
       'src/shared/**/*.js',
-      '!src/shared/vendor/**/*.js',
       '!src/**/__benchmarks__/**/*.js',
       '!src/**/__tests__/**/*.js',
       '!src/**/__mocks__/**/*.js',
@@ -84,12 +82,24 @@ var paths = {
 
       'src/ReactVersion.js',
       'src/shared/**/*.js',
-      '!src/shared/vendor/**/*.js',
       '!src/**/__benchmarks__/**/*.js',
       '!src/**/__tests__/**/*.js',
       '!src/**/__mocks__/**/*.js',
     ],
     lib: 'build/node_modules/react-test-renderer/lib',
+  },
+  reactNoopRenderer: {
+    src: [
+      'src/renderers/noop/**/*.js',
+      'src/renderers/shared/**/*.js',
+
+      'src/ReactVersion.js',
+      'src/shared/**/*.js',
+      '!src/**/__benchmarks__/**/*.js',
+      '!src/**/__tests__/**/*.js',
+      '!src/**/__mocks__/**/*.js',
+    ],
+    lib: 'build/node_modules/react-noop-renderer/lib',
   },
 };
 
@@ -115,7 +125,9 @@ var rendererSharedState = {
   React: 'react/lib/React',
   // Shared state
   ReactCurrentOwner: 'react/lib/ReactCurrentOwner',
+  checkPropTypes: 'react/lib/checkPropTypes',
   ReactComponentTreeHook: 'react/lib/ReactComponentTreeHook',
+  ReactDebugCurrentFrame: 'react/lib/ReactDebugCurrentFrame',
 };
 
 var moduleMapReactDOM = Object.assign(
@@ -130,7 +142,7 @@ var moduleMapReactNative = Object.assign(
     deepDiffer: 'react-native/lib/deepDiffer',
     deepFreezeAndThrowOnMutationInDev: 'react-native/lib/deepFreezeAndThrowOnMutationInDev',
     flattenStyle: 'react-native/lib/flattenStyle',
-    InitializeJavaScriptAppEngine: 'react-native/lib/InitializeJavaScriptAppEngine',
+    InitializeCore: 'react-native/lib/InitializeCore',
     RCTEventEmitter: 'react-native/lib/RCTEventEmitter',
     TextInputState: 'react-native/lib/TextInputState',
     UIManager: 'react-native/lib/UIManager',
@@ -146,6 +158,13 @@ var moduleMapReactTestRenderer = Object.assign(
   rendererSharedState,
   moduleMapBase
 );
+
+var moduleMapReactNoopRenderer = Object.assign(
+  {},
+  rendererSharedState,
+  moduleMapBase
+);
+
 
 var errorCodeOpts = {
   errorMapFilePath: 'scripts/error-codes/codes.json',
@@ -179,6 +198,13 @@ var babelOptsReactTestRenderer = {
   ],
 };
 
+var babelOptsReactNoopRenderer = {
+  plugins: [
+    devExpressionWithCodes, // this pass has to run before `rewrite-modules`
+    [babelPluginModules, {map: moduleMapReactNoopRenderer}],
+  ],
+};
+
 gulp.task('eslint', getTask('eslint'));
 
 gulp.task('lint', ['eslint']);
@@ -193,6 +219,7 @@ gulp.task('react:clean', function() {
     paths.reactDOM.lib,
     paths.reactNative.lib,
     paths.reactTestRenderer.lib,
+    paths.reactNoopRenderer.lib,
   ]);
 });
 
@@ -201,36 +228,47 @@ gulp.task('react:modules', function() {
     gulp
       .src(paths.react.src)
       .pipe(babel(babelOptsReact))
+      .pipe(stripProvidesModule())
       .pipe(flatten())
       .pipe(gulp.dest(paths.react.lib)),
 
     gulp
       .src(paths.reactDOM.src)
       .pipe(babel(babelOptsReactDOM))
+      .pipe(stripProvidesModule())
       .pipe(flatten())
       .pipe(gulp.dest(paths.reactDOM.lib)),
 
     gulp
       .src(paths.reactNative.src)
       .pipe(babel(babelOptsReactNative))
+      .pipe(stripProvidesModule())
       .pipe(flatten())
       .pipe(gulp.dest(paths.reactNative.lib)),
 
     gulp
       .src(paths.reactTestRenderer.src)
+      .pipe(stripProvidesModule())
       .pipe(babel(babelOptsReactTestRenderer))
       .pipe(flatten())
-      .pipe(gulp.dest(paths.reactTestRenderer.lib))
+      .pipe(gulp.dest(paths.reactTestRenderer.lib)),
+
+    gulp
+      .src(paths.reactNoopRenderer.src)
+      .pipe(stripProvidesModule())
+      .pipe(babel(babelOptsReactNoopRenderer))
+      .pipe(flatten())
+      .pipe(gulp.dest(paths.reactNoopRenderer.lib))
   );
 });
 
 gulp.task('react:extract-errors', function() {
-  return merge(
-    gulp.src(paths.react.src).pipe(extractErrors(errorCodeOpts)),
-    gulp.src(paths.reactDOM.src).pipe(extractErrors(errorCodeOpts)),
-    gulp.src(paths.reactNative.src).pipe(extractErrors(errorCodeOpts)),
-    gulp.src(paths.reactTestRenderer.src).pipe(extractErrors(errorCodeOpts))
-  );
+  return gulp.src([].concat(
+    paths.react.src,
+    paths.reactDOM.src,
+    paths.reactNative.src,
+    paths.reactTestRenderer.src
+  )).pipe(extractErrors(errorCodeOpts));
 });
 
 gulp.task('default', ['react:modules']);
